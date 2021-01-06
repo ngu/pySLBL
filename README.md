@@ -13,7 +13,7 @@ There is no publication direclty describing this toolbox, but you may cite this 
 To cite the SLBL method itself, please refer to the reference section
 
 ## References
-#
+
 ### Sloping local base level
 * [Jaboyedoff, M.; Carrea, D.; Derron, M.-H.; Oppikofer, T.; Penna, I. M. & Rudaz, B. A review of methods used to estimate initial landslide failure surface depths and volumes. Engineering Geology, 2020, 267, 105478](https://www.sciencedirect.com/science/article/pii/S0013795219302078)
 * [Jaboyedoff, M.; Couture, R. & Locat, P. Structural analysis of Turtle Mountain (Alberta) using digital elevation model: Toward a progressive failure. Geomorphology, 2009, 103, 5 - 16](https://www.sciencedirect.com/science/article/pii/S0169555X08001426)
