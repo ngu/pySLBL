@@ -46,12 +46,15 @@ import string, random
 
 
 if __name__=="__main__":
-	verbose = False
-	
 	# Retrive the parameters from the GUI
 	grid_dem_file = arcpy.GetParameterAsText(0)
 	mask_file = arcpy.GetParameterAsText(1)
 	grid_out_file = arcpy.GetParameterAsText(2)
+	if grid_out_file.find('#verbose') != -1:
+		verbose = True
+		grid_out_file = grid_out_file.split('#')[0]
+	else:
+		verbose= False
 	tol = float(arcpy.GetParameterAsText(3).replace(',','.'))
 	maxt = float(arcpy.GetParameterAsText(4).replace(',','.'))
 	stop = float(arcpy.GetParameterAsText(5).replace(',','.'))
@@ -134,6 +137,11 @@ if __name__=="__main__":
 			
 			# Generate a raster using the OID field as value
 			oid_fieldname = mask_desc.OIDFieldName
+			if verbose:
+				arcpy.AddMessage('Processing extent: x:[{}:{}], y:[{}:{}]'.format(arcpy.env.extent.XMin,arcpy.env.extent.XMax,arcpy.env.extent.YMin,arcpy.env.extent.YMax))
+				arcpy.AddMessage('Cellsize: {}'.format(cellSize))
+				arcpy.AddMessage('Coordinate system: {}'.format(arcpy.env.outputCoordinateSystem.name))
+				arcpy.AddMessage('OID field name = {}'.format(oid_fieldname))
 			arcpy.PolygonToRaster_conversion (mask_file, oid_fieldname, grid_mask_file_temp, "CELL_CENTER", "#", cellSize)
 
 			# Reclassify the raster to keep selected polygons (or all polygons if none is selected) as the mask
