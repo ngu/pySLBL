@@ -56,9 +56,18 @@ if __name__=="__main__":
 	else:
 		verbose= False
 	tol = float(arcpy.GetParameterAsText(3).replace(',','.'))
-	maxt = float(arcpy.GetParameterAsText(4).replace(',','.'))
-	stop = float(arcpy.GetParameterAsText(5).replace(',','.'))
-	method = arcpy.GetParameterAsText(6)
+	maxt = arcpy.GetParameterAsText(4)
+	if len(maxt)==0:
+		maxt = np.inf
+	else:
+		maxt = float(maxt.replace(',','.'))
+	maxv = arcpy.GetParameterAsText(5)
+	if len(maxv)==0:
+		maxv = np.inf
+	else:
+		maxv = float(maxv.replace(',','.'))
+	stop = float(arcpy.GetParameterAsText(6).replace(',','.'))
+	method = arcpy.GetParameterAsText(7)
 	if method == '4 neighbours, average' or method == '4 neighbours, min/max':
 		nb_neigh = 4
 	elif method == '8 neighbours, average' or method == '8 neighbours, min/max':
@@ -69,10 +78,10 @@ if __name__=="__main__":
 		criteria = 'minmax'
 	elif method == '4 neighbours, average' or method == '8 neighbours, average':
 		criteria = 'average'
-	not_deepen = arcpy.GetParameterAsText(7)
-	inverse = arcpy.GetParameterAsText(8)
-	grid_diff_out = arcpy.GetParameterAsText(9)
-	grid_hill_out = arcpy.GetParameterAsText(10)
+	not_deepen = arcpy.GetParameterAsText(8)
+	inverse = arcpy.GetParameterAsText(9)
+	grid_diff_out = arcpy.GetParameterAsText(10)
+	grid_hill_out = arcpy.GetParameterAsText(11)
 	
 	# Check the necessary extensions
 	arcpy.CheckOutExtension("3D")
@@ -278,9 +287,10 @@ if __name__=="__main__":
 		arcpy.AddMessage(str_message)
 
 	iter = 0
+	volume = 0.
 
 	# The SLBL strarts here
-	while np.amax(grid_diff)>stop and np.amax(grid_thickn)<maxt:
+	while np.amax(grid_diff)>stop and np.amax(grid_thickn)<maxt and volume<maxv:
 		iter=iter+1
 		grid_thickn_prev = deepcopy(grid_thickn)
 		grid_slbl_prev = deepcopy(grid_slbl)
@@ -323,8 +333,10 @@ if __name__=="__main__":
 		grid_thickn = np.absolute(grid_dem - grid_slbl)
 		grid_diff = np.absolute(grid_thickn - grid_thickn_prev)
 		
+		volume = (np.sum(grid_thickn)*cellSize*cellSize)
+		
 		if iter%100==0:
-			str_message = '{0} iterations calculated. Maximum difference is {1} and maximum thickness is {2}'.format(str(iter),str(np.amax(grid_diff)),str(np.amax(grid_thickn)))
+			str_message = '{0} iterations. Max diff is {1}, max thickness is {2} and volume is {3}'.format(str(iter),str(np.amax(grid_diff)),str(np.amax(grid_thickn)),str(volume))
 			arcpy.AddMessage(str_message)
 	# The SLBL is finished
 
@@ -336,7 +348,7 @@ if __name__=="__main__":
 	str_message = 'Average thickness: {} m'.format(str(np.mean(grid_thickn[grid_mask])))
 	arcpy.AddMessage(str_message)
 	volume = (np.sum(grid_thickn)*cellSize*cellSize)
-	str_message = 'Total volume: {} Mm3'.format(str(volume/1000000))
+	str_message = 'Total volume: {} million m3'.format(str(volume/1000000))
 	arcpy.AddMessage(str_message)
 	if volume < 251464.767769637:
 		scheidegger = 30.9637565320735
@@ -347,7 +359,7 @@ if __name__=="__main__":
 
 	# prints the results if the command line is used
 	print('SLBL done in {} iterations'.format(str(iter)))
-	print('Volume is: {} Mm3'.format(str((np.sum(grid_thickn)*cellSize*cellSize)/1000000)))
+	print('Volume is: {} million m3'.format(str((np.sum(grid_thickn)*cellSize*cellSize)/1000000)))
 	print('Max height is: {} m'.format(str(np.amax(grid_thickn))))
 
 	str_message = 'Saving elevation file...'
@@ -444,7 +456,7 @@ if __name__=="__main__":
 		arcpy.AddMessage(str_message)
 		arcpy.CreateTable_management(os.path.dirname(grid_out_file),summaryTableName)
 		arcpy.AddField_management(summaryTable,"Name","TEXT")
-		arcpy.AddField_management(summaryTable,"Volume_Mm3","FLOAT")
+		arcpy.AddField_management(summaryTable,"Volume_10e6m3","FLOAT")
 		if saveInGDB:
 			arcpy.AddField_management(summaryTable,"Reach_angle","FLOAT")
 		else: #max length = 10
@@ -455,6 +467,7 @@ if __name__=="__main__":
 		arcpy.AddField_management(summaryTable,"Cell_size","SHORT")
 		arcpy.AddField_management(summaryTable,"Tolerance","FLOAT")
 		arcpy.AddField_management(summaryTable,"Max_depth","FLOAT")
+		arcpy.AddField_management(summaryTable,"Max_vol","FLOAT")
 		arcpy.AddField_management(summaryTable,"Method","TEXT")
 		if saveInGDB:
 			arcpy.AddField_management(summaryTable,"Stop_criterion","FLOAT")
@@ -474,10 +487,14 @@ if __name__=="__main__":
 		arcpy.AddField_management(summaryTable,"Method","TEXT")
 	if not "Inverse" in field_names: #field added in a later version
 		arcpy.AddField_management(summaryTable,"Inverse","TEXT")
+	if not "Max_vol" in field_names: #field added in a later version
+		arcpy.AddField_management(summaryTable,"Max_vol","FLOAT")
+	if "Volume_Mm3" in field_names: #field name changed in a later version
+		arcpy.AlterField_management(summaryTable, "Volume_Mm3", 'Volume_10e6m3')
 	cur = arcpy.InsertCursor(summaryTable)
 	row = cur.newRow()
 	row.setValue('Name', os.path.basename(out_name))
-	row.setValue('Volume_Mm3', (volume/1000000))
+	row.setValue('Volume_10e6m3', (volume/1000000))
 	if saveInGDB:
 		row.setValue('Reach_angle', scheidegger)
 	else:
@@ -487,7 +504,14 @@ if __name__=="__main__":
 	row.setValue('Iterations', iter)
 	row.setValue('Cell_size', cellSize)
 	row.setValue('Tolerance', tol)
-	row.setValue('Max_depth', maxt)
+	if np.isinf(maxt):
+		row.setValue('Max_depth', -1)
+	else:
+		row.setValue('Max_depth', maxt)
+	if np.isinf(maxv):
+		row.setValue('Max_vol', -1)
+	else:
+		row.setValue('Max_vol', maxv)
 	row.setValue('Method', criteria)
 	if saveInGDB:
 		row.setValue('Stop_criterion', stop)

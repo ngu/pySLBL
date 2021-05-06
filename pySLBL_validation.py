@@ -20,8 +20,8 @@ class ToolValidator(object):
     """Refine the properties of a tool's parameters.  This method is
     called when the tool is opened."""
     lst=['4 neighbours, average','8 neighbours, average', '4 neighbours, min/max','8 neighbours, min/max']
-    self.params[6].filter.list=lst
-    self.params[6].value = '4 neighbours, average'
+    self.params[7].filter.list=lst
+    self.params[7].value = '4 neighbours, average'
 
     return
 
