@@ -625,11 +625,12 @@ def savegrids(grid_slbl,grid_thickn,ws,out_basename,ext):
 			str_message = 'Saving thickness file...'
 			arcpy.AddMessage(str_message)
 			grid_out = arcpy.NumPyArrayToRaster(grid_thickn,lowerLeft,cellSize)
-			
 			if not (saveInGDB or len(ext) > 0):
-				grid_out_thick_file = os.path.join(ws, out_basename[0:11] + '_t')
+				grid_out_thick_file_name = out_basename[0:11] + '_t'
 			else:
-				grid_out_thick_file = os.path.join(ws,out_basename + '_t' + ext)
+				grid_out_thick_file_name = out_basename + '_t'
+			grid_out_thick_file_name = validatename(ws,grid_out_thick_file_name,ext)
+			grid_out_thick_file = os.path.join(ws, grid_out_thick_file_name + ext)
 			grid_out.save(grid_out_thick_file)
 			grid_out_thick_file_name=os.path.basename(grid_out_thick_file)
 			
@@ -659,9 +660,11 @@ def savegrids(grid_slbl,grid_thickn,ws,out_basename,ext):
 		str_message = 'Saving hillshade file...'
 		arcpy.AddMessage(str_message)
 		if not (saveInGDB or len(ext) > 0):
-			grid_out_hill_file = os.path.join(ws, out_basename[0:11] + '_h')
+			grid_out_hill_file_name = out_basename[0:11] + '_h'
 		else:
-			grid_out_hill_file = os.path.join(ws, out_basename + '_hshd' + ext)
+			grid_out_hill_file_name = out_basename + '_hshd'
+		grid_out_hill_file_name = validatename(ws,grid_out_hill_file_name,ext)
+		grid_out_hill_file = os.path.join(ws, grid_out_hill_file_name + ext)
 		grid_out_hill_lyr = arcpy.sa.Hillshade(grid_dem_out,315, 45, 'NO_SHADOWS', 1)
 		grid_out_hill_lyr.save(grid_out_hill_file)
 		
@@ -769,7 +772,7 @@ if __name__=="__main__":
 		grid_hill_out = arcpy.GetParameterAsText(13)
 	
 	#Debbuging tools
-	verbose = True
+	verbose = False
 	savefigs = False
 	figspath = r'D:\Soft\pySLBL\Unit_tests'
 	
