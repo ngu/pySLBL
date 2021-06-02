@@ -27,10 +27,6 @@ class ToolValidator(object):
     self.params[2].filter.list=lst
     self.params[2].value = 'Single value'
 
-    lst=['Full extent of the DEM','Clip around the polygon(s)']
-    self.params[11].filter.list=lst
-    self.params[11].value = 'Full extent of the DEM'
-
     return
 
   def updateParameters(self):
@@ -42,23 +38,6 @@ class ToolValidator(object):
   def updateMessages(self):
     """Modify the messages created by internal validation for each tool
     parameter.  This method is called after internal validation."""
-    if self.params[10].value:
-      if arcpy.Exists(self.params[10].value.value):
-        self.params[10].setErrorMessage("The feature class already exists")
-      else:
-        desc = arcpy.Describe(os.path.dirname(self.params[10].value.value))
-        name = os.path.basename(self.params[10].value.value)
-        if desc.workspaceType == 'LocalDatabase':
-          self.params[10].clearMessage()
-        else:
-          if name.find('.') == -1:
-            if len(name) > 13:
-              self.params[10].setErrorMessage("The file name of an ESRI grid is limited to 13 characters. It is recommended to save in tiff (add '.tif' at the end of the name) or in a database, but you may also just change the name")
-            else:
-              self.params[10].setWarningMessage("It is recommended to save in tiff (add '.tif' at the end of the name) or in a database")
-          else:
-            self.params[10].clearMessage()
-
     
     if self.params[2].value == 'Single value':
       self.params[3].enabled = 1
