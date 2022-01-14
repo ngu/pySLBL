@@ -123,47 +123,66 @@ def SLBL(grid_dem,grid_mask,tol,maxt,maxv,z_min):
 	
 	return grid_slbl, grid_thickn, nb_iter
 
-def define_extent(poly_extent,dem_extent,cellSize):
+def define_extent(poly_extent,dem_extent,cellSize,src_mask = False):
 	# Define the processing area from the polygon(s) extent and the DEM
 	
+	if src_mask != False:
+		pt_min = arcpy.PointGeometry(arcpy.Point(poly_extent.XMin,poly_extent.YMin),src_mask).projectAs(dem_extent.spatialReference).centroid
+		pt_max = arcpy.PointGeometry(arcpy.Point(poly_extent.XMax,poly_extent.YMax),src_mask).projectAs(dem_extent.spatialReference).centroid
+
+		if verbose:
+			str_message = 'Polygon src:{}'.format(src_mask.name)
+			arcpy.AddMessage(str_message)
+			str_message = 'Polygon: x:{}-{}, y:{}-{}, src:{}'.format(pt_min.X,pt_max.X,pt_min.Y,pt_max.Y,dem_extent.spatialReference.name)
+			arcpy.AddMessage(str_message)
+	else:
+		pt_min = arcpy.Point(poly_extent.XMin, poly_extent.YMin)
+		pt_max = arcpy.Point(poly_extent.XMax, poly_extent.YMax)
+
+		if verbose:
+			try:
+				str_message = 'Polygon: x:{}-{}, y:{}-{}, src:{}'.format(poly_extent.XMin,poly_extent.XMax,poly_extent.YMin,poly_extent.YMax,poly_extent.spatialReference.name)
+			except: #If the extent is created in the script, no SR can be defined
+				str_message = 'Polygon: x:{}-{}, y:{}-{}, src:{}'.format(poly_extent.XMin,poly_extent.XMax,poly_extent.YMin,poly_extent.YMax,mask_desc.extent.spatialReference.name)
+			arcpy.AddMessage(str_message)
+	
 	if verbose:
-		try:
-			str_message = 'Polygon: x:{}-{}, y:{}-{}, src:{}'.format(poly_extent.XMin,poly_extent.XMax,poly_extent.YMin,poly_extent.YMax,poly_extent.spatialReference.name)
-		except: #If the extent is created in the script, no SR can be defined
-			str_message = 'Polygon: x:{}-{}, y:{}-{}, src:{}'.format(poly_extent.XMin,poly_extent.XMax,poly_extent.YMin,poly_extent.YMax,mask_desc.extent.spatialReference.name)
-		arcpy.AddMessage(str_message)
 		str_message = 'DEM: x:{}-{}, y:{}-{}, src:{}'.format(dem_extent.XMin,dem_extent.XMax,dem_extent.YMin,dem_extent.YMax,dem_extent.spatialReference.name)
 		arcpy.AddMessage(str_message)
 	
-	if (poly_extent.XMin < dem_extent.XMin) or (poly_extent.XMax > dem_extent.XMax) or (poly_extent.YMin < dem_extent.YMin) or (poly_extent.YMax > dem_extent.YMax):
+	if (pt_min.X < dem_extent.XMin) or (pt_max.X > dem_extent.XMax) or (pt_min.Y < dem_extent.YMin) or (pt_max.Y > dem_extent.YMax):
 		arcpy.AddError('The polygon layer should be completely contained by the DEM')
-
-	# Looks for the minimum extent of the DEM that includes the polyon(s) and adds 2 pixels
-	# if the coordinate of the polygon falls on a grid line, only one pixel remain around
-	# the polygon on that side. One pixel is needed when the "not deepening" option
-	# is activated
-	xmin = deepcopy(dem_extent.XMin)
-	while xmin < poly_extent.XMin:
-		xmin += cellSize
-	xmin = xmin - (2*cellSize)
+	else:
+		# Looks for the minimum extent of the DEM that includes the polyon(s) and adds 2 pixels
+		# if the coordinate of the polygon falls on a grid line, only one pixel remain around
+		# the polygon on that side. One pixel is needed when the "not deepening" option
+		# is activated
+		xmin = deepcopy(dem_extent.XMin)
+		while xmin < pt_min.X:
+			xmin += cellSize
+		xmin = xmin - (2*cellSize)
+			
+		xmax = deepcopy(dem_extent.XMax)
+		while xmax > pt_max.X:
+			xmax = xmax - cellSize
+		xmax = xmax + (2*cellSize)
+			
+		ymin = deepcopy(dem_extent.YMin)
+		while ymin < pt_min.Y:
+			ymin += cellSize
+		ymin = ymin - (2*cellSize)
+			
+		ymax = deepcopy(dem_extent.YMax)
+		while ymax > pt_max.Y:
+			ymax = ymax - cellSize
+		ymax = ymax + (2*cellSize)
+	
+		if (xmin < dem_extent.XMin) or (xmax > dem_extent.XMax) or (ymin < dem_extent.YMin) or (ymax > dem_extent.YMax):
+			arcpy.AddError('The DEM should be at least 2 pixels larger than the polygon(s)')
 		
-	xmax = deepcopy(dem_extent.XMax)
-	while xmax > poly_extent.XMax:
-		xmax = xmax - cellSize
-	xmax = xmax + (2*cellSize)
-		
-	ymin = deepcopy(dem_extent.YMin)
-	while ymin < poly_extent.YMin:
-		ymin += cellSize
-	ymin = ymin - (2*cellSize)
-		
-	ymax = deepcopy(dem_extent.YMax)
-	while ymax > poly_extent.YMax:
-		ymax = ymax - cellSize
-	ymax = ymax + (2*cellSize)
-
-	if (xmin < dem_extent.XMin) or (xmax > dem_extent.XMax) or (ymin < dem_extent.YMin) or (ymax > dem_extent.YMax):
-		arcpy.AddError('The DEM should be at least 2 pixels larger than the polygon(s)')
+		if verbose:
+			str_message = 'Processing extent: x:{}-{}, y:{}-{}, src:{}'.format(xmin,xmax,ymin,ymax,dem_extent.spatialReference.name)
+			arcpy.AddMessage(str_message)
 
 	return arcpy.Extent(xmin, ymin, xmax, ymax)
 
@@ -193,16 +212,17 @@ def raster2numpy(ws,ext,mask_file,mask_desc,not_deepen,listValue):
 	if verbose:
 		msg = '[%s]' % ', '.join(map(str, listValue))
 		arcpy.AddMessage(msg)
-		arcpy.AddMessage('path to Reclassify: {}'.format(os.path.abspath(inspect.getfile(arcpy.sa.Reclassify))))
-		arcpy.AddMessage('Workspace: {}'.format(arcpy.env.workspace))
-		arcpy.AddMessage('Scratch workspace: {}'.format(arcpy.env.scratchWorkspace))
+		arcpy.AddMessage(u'path to Reclassify: {}'.format(os.path.abspath(inspect.getfile(arcpy.sa.Reclassify))))
+		arcpy.AddMessage(u'Workspace: {}'.format(arcpy.env.workspace))
+		arcpy.AddMessage(u'Scratch workspace: {}'.format(arcpy.env.scratchWorkspace))
+
 	myRemapVal = arcpy.sa.RemapValue(listValue)
 	grid_mask_file = arcpy.sa.Reclassify(grid_mask_file_temp, "Value", myRemapVal, "NODATA")
 	if verbose:
 		arcpy.AddMessage('grid_mask_file reclassified')
 		desc = arcpy.Describe(grid_mask_file)
 		layersource = os.path.join(str(desc.path), str(desc.name))
-		arcpy.AddMessage('reclassified mask (intermediate) saved in: {}'.format(layersource))
+		arcpy.AddMessage(u'reclassified mask (intermediate) saved in: {}'.format(layersource))
 	arcpy.Delete_management(grid_mask_file_temp)
 	if verbose:
 		arcpy.AddMessage('grid_mask_file_temp deleted')
@@ -231,7 +251,7 @@ def raster2numpy(ws,ext,mask_file,mask_desc,not_deepen,listValue):
 		str_message = 'Filling missing data in the DEM using the nearest neighbours'
 		arcpy.AddMessage(str_message)
 		index = np.where(mask==True)
-		points = np.dstack((index[0],index[1]))
+		points = np.dstack((index[1],index[0]))
 		values = grid_dem[mask].flatten()
 		values = np.array(values)
 		points = points.reshape(len(values),2)
@@ -273,6 +293,8 @@ def definetolerance(grid_mask, grid_dem):
 	if verbose:
 		str_message = 'x_mean = {}, y_mean = {}'.format(x_mean,y_mean)
 		arcpy.AddMessage(str_message)
+		str_message = 'x: [{}-{}], y: [{}-{}]'.format(np.min(grid_x[grid_mask]),np.max(grid_x[grid_mask]),np.min(grid_y[grid_mask]),np.max(grid_y[grid_mask]))
+		arcpy.AddMessage(str_message)
 	
 	# Vectorizes the grids for the points inside the polygon
 	x = grid_x[grid_mask].flatten()
@@ -286,7 +308,10 @@ def definetolerance(grid_mask, grid_dem):
 	# Fits a plan on the surface of the landslide
 	# Inspired from: https://gist.github.com/RustingSword/e22a11e1d391f2ab1f2c
 	XY1 = np.concatenate((x,y,np.ones(x.shape)),axis=1)
-	(a, b, c),resid,rank,s = np.linalg.lstsq(XY1, z)
+	if verbose:
+		str_message = 'XY1({},{}) is {} with range {}-{}, z({},{}) is {} with range {}-{}'.format(XY1.shape[0],XY1.shape[1],type(XY1),np.min(XY1),np.max(XY1),z.shape[0],z.shape[1],type(z),np.min(z),np.max(z))
+		arcpy.AddMessage(str_message)
+	(a, b, c),resid,rank,s = np.linalg.lstsq(XY1, z, rcond=1e-10)
 	
 	# Calculates the normal vector of the plan
 	normal = np.array([a[0], b[0], -1])
@@ -379,6 +404,7 @@ def definetolerance(grid_mask, grid_dem):
 		str_message = 'profile: ({},{})-({},{})'.format(xa,ya,xb,yb)
 		arcpy.AddMessage(str_message)
 	
+	
 	# Projects the altitudes inside the polygon area onto the profile and
 	# measures the distance to the profile to only keep the closest ones
 	profil = np.empty((0,2), float)
@@ -391,12 +417,44 @@ def definetolerance(grid_mask, grid_dem):
 				profil_add = np.squeeze(profil_add, axis=2)
 			profil = np.append(profil,profil_add,axis=0)
 
+	#--------------------------------------------------------------------------
+	# Work in progress --> get a better profile
+	
+	# Vectorizes the grids for all the points
+	x = grid_x.flatten()
+	y = grid_y.flatten()
+	z = grid_dem.flatten()
+	
+	x = np.expand_dims(x,axis=1)
+	y = np.expand_dims(y,axis=1)
+	z = np.expand_dims(z,axis=1)
+	
+	# Generate points evenly spaced along the profile
+	x_profile = np.linspace(xa,xb,num=100)
+	y_profile = np.linspace(ya,yb,num=100)
+	xy_profile = np.column_stack((x_profile,y_profile))
+	
+	l_profile = np.sqrt((x_profile-xa)**2 + (y_profile-ya)**2)
+	
+	XY = np.concatenate((x,y),axis=1)
+	
+	profil_int = griddata(XY, z, xy_profile, method='cubic')
+	mask_int = griddata(XY, grid_mask.flatten(), xy_profile, method='nearest')
+	
+	#Save profiles as shapefile and figures with surfaces?
+	#Maybe the easiest is to save the profiles as points and make figures in a second step
+	# option save profile as point, line, both
+	#--------------------------------------------------------------------------
+
+
 	if savefigs:
 		# plot profile
 		import matplotlib.pyplot as plt
 		fig = plt.figure()
 		ax = fig.gca()
 		ax.plot(profil[:,0],profil[:,1],'.')
+		ax.plot(l_profile,profil_int,'b')
+		ax.plot(l_profile[mask_int],profil_int[mask_int],'r')
 		ax.axis('equal')
 		ax.axis('tight')
 		save_name = validatename(figspath,'profile','.png')
@@ -404,11 +462,14 @@ def definetolerance(grid_mask, grid_dem):
 		plt.close()
 
 	# Calculate the tolerance using the altitude range of the profile (dZ) and its length (dL)
-	dZ = np.max(profil[:,1])-np.min(profil[:,1])
-	dL = np.max(profil[:,0])-np.min(profil[:,0])
+# 	dZ = np.max(profil[:,1])-np.min(profil[:,1])
+# 	dL = np.max(profil[:,0])-np.min(profil[:,0])
+	dZ = np.max(profil_int[mask_int]) - np.min(profil_int[mask_int])
+	dL = np.max(l_profile[mask_int]) - np.min(l_profile[mask_int])
 	tol_max = 4 * (1-np.sqrt(2)) * dZ * (cellSize**2/dL**2)
-	
+
 	if verbose:
+		arcpy.AddMessage('dZ={} ({}-{}), dL={}'.format(dZ,profil_int[0],profil_int[-1],dL))
 		arcpy.AddMessage('tol max: {}'.format(tol_max))
 	
 	tol_inter = 2 * (1-np.sqrt(2)) * dZ * (cellSize**2/dL**2)
@@ -495,6 +556,10 @@ def fillsummarytable(summaryTable,out_basename,out_basename_validated,grid_thick
 			arcpy.AddField_management(summaryTable,"Not_deepen","TEXT")
 		arcpy.AddField_management(summaryTable,"Inverse","TEXT")
 		arcpy.AddField_management(summaryTable,"Date","DATE")
+	
+	if arcpy.TestSchemaLock(summaryTable) == False:
+		str_message = 'The table {} is locked and cannot be edited here. Make sure it is not being edited elsewhere'.format(summaryTable)
+		arcpy.AddError(str_message)
 		
 	str_message = 'Filling summary table...'
 	arcpy.AddMessage(str_message)
@@ -772,8 +837,8 @@ if __name__=="__main__":
 		grid_hill_out = arcpy.GetParameterAsText(13)
 	
 	#Debbuging tools
-	verbose = False
-	savefigs = False
+	verbose = True
+	savefigs = True
 	figspath = r'D:\Soft\pySLBL\Unit_tests'
 	
 	# Check the necessary extensions
@@ -802,7 +867,10 @@ if __name__=="__main__":
 	#arcpy.MakeRasterLayer_management (grid_dem_file, grid_dem_lyr, "", "", "1")
 
 # Convert the polygon features to a raster mask
-	arcpy.RecalculateFeatureClassExtent_management(mask_file)
+	try:
+		arcpy.RecalculateFeatureClassExtent_management(mask_file)
+	except:
+		pass
 	mask_desc = arcpy.Describe(mask_file)
 	try:
 		# Retrieve the selected polygons (works if the input is a layer)
@@ -834,8 +902,10 @@ if __name__=="__main__":
 		dem_extent = dem_desc.extent
 		
 		# Check if the mask and DEM are in the same SRC. Reproject the mask if necessary
-		src_mask = mask_desc.spatialReference.name
-		src_dem = dem_desc.spatialReference.name
+		src_mask = mask_desc.extent.spatialReference.name
+		src_dem = dem_desc.extent.spatialReference.name
+		if verbose:
+			arcpy.AddMessage('SRC mask: {}, SRC dem: {}, src are equal: {}'.format(src_mask,src_dem,src_mask == src_dem))
 		if src_mask != src_dem:
 			# Generate a random name for intermediate data (to avoid conflict if previous intermediate data weren't correctly deleted)
 			lower_alphabet = string.ascii_lowercase
@@ -851,7 +921,6 @@ if __name__=="__main__":
 			if arcpy.GetInstallInfo()['ProductName'] == 'Desktop':
 				mask_file = arcpy.mapping.Layer(mask_file)
 			else:
-				#mask_file = arcpy.mp.Layer(mask_file)
 				mask_file = arcpy.MakeFeatureLayer_management(mask_file)
 			mask_desc = arcpy.Describe(mask_file)
 			mask_reproject = True
@@ -887,7 +956,7 @@ if __name__=="__main__":
 				ymin = min([extent.YMin for extent in extents])
 				ymax = max([extent.YMax for extent in extents])
 				poly_extent = arcpy.Extent(xmin, ymin, xmax, ymax)
-				processing_extent = define_extent(poly_extent,dem_extent,cellSize)
+				processing_extent = define_extent(poly_extent,dem_extent,cellSize,src_mask = extents[0].spatialReference)
 				arcpy.env.extent = processing_extent
 				grid_mask, grid_dem, z_min = raster2numpy(ws,ext,mask_file,mask_desc,not_deepen,listValue)
 				if tol_mode == 'Auto' or tol_mode == 'Auto min/inter/max':
@@ -946,7 +1015,7 @@ if __name__=="__main__":
 						if tol_mode == 'Auto' or tol_mode == 'Auto min/inter/max':
 							tols = definetolerance(grid_mask, grid_dem)
 						if tol_mode == 'Auto':
-							tols = tols[0]
+							tols = [tols[0]]
 						for tol in tols:
 							grid_slbl, grid_thickn, nb_iter = SLBL(grid_dem,grid_mask,tol,maxt,maxv,z_min)
 							out_basename_validated = validatename(ws,row[2],ext)
@@ -985,7 +1054,7 @@ if __name__=="__main__":
 					if tol_mode == 'Auto' or tol_mode == 'Auto min/inter/max':
 						tols = definetolerance(grid_mask, grid_dem)
 					if tol_mode == 'Auto':
-						tols = tols[0]
+						tols = [tols[0]]
 					for tol in tols:
 						grid_slbl, grid_thickn, nb_iter = SLBL(grid_dem,grid_mask,tol,maxt,maxv,z_min)
 						out_basename_validated = validatename(ws,row[2],ext)

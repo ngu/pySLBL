@@ -68,4 +68,19 @@ class ToolValidator(object):
       self.params[3].value = ''
       self.params[3].parameterType = 'Optional'
       self.params[3].clearMessage()
+
+    if self.params[0].value and self.params[11].value == 'Full extent of the DEM':
+      DEM = self.params[0].value
+      desc = arcpy.Describe(DEM)
+      xmin = desc.extent.XMin
+      xmax = desc.extent.XMax
+      ymin = desc.extent.YMin
+      ymax = desc.extent.YMax
+      res = desc.meanCellWidth
+      ncol = (xmax - xmin)/res
+      nrow = (ymax - ymin)/res
+      if nrow*ncol > 10000000:
+        self.params[11].setWarningMessage("The raster has {} rows and {} columns, which is quite large. It is recommanded to use the option 'Clip around the polygon(s)'".format(str(int(nrow)),str(int(ncol))))
+      else:
+        self.params[11].clearMessage()
     return

@@ -49,9 +49,9 @@ if __name__=="__main__":
 	
 	file_list = os.listdir(res_folder)
 	
-	str_message = 'Reprojecting the files in folder {}...'.format(res_folder)
+	str_message = u'Reprojecting the files in folder {}...'.format(res_folder)
 	arcpy.AddMessage(str_message)
-
+		
 	dim_warning = False
 
 	for file in file_list:
@@ -80,7 +80,7 @@ if __name__=="__main__":
 						f1.writelines(header_text)
 						f1.writelines(lines)
 				else:
-					str_message = 'Cannot overwrite file {} as overwrite is off'.format(target)
+					str_message = u'Cannot overwrite file {} as overwrite is off'.format(target)
 					arcpy.AddWarning(str_message)
 			else:
 				with open(target, "w") as f1:
@@ -112,7 +112,7 @@ if __name__=="__main__":
 						with open(target, "w") as f1:
 							f1.writelines(lines_corr)
 					else:
-						str_message = 'Cannot overwrite file {} as overwrite is off'.format(target)
+						str_message = u'Cannot overwrite file {} as overwrite is off'.format(target)
 						arcpy.AddWarning(str_message)
 				else:
 					with open(target, "w") as f1:
@@ -141,7 +141,7 @@ if __name__=="__main__":
 						with open(target, "w") as f1:
 							f1.writelines(lines_corr)
 					else:
-						str_message = 'Cannot overwrite file {} as overwrite is off'.format(target)
+						str_message = u'Cannot overwrite file {} as overwrite is off'.format(target)
 						arcpy.AddWarning(str_message)
 				else:
 					with open(target, "w") as f1:
@@ -170,7 +170,7 @@ if __name__=="__main__":
 						with open(target, "w") as f1:
 							f1.writelines(lines_corr)
 					else:
-						str_message = 'Cannot overwrite file {} as overwrite is off'.format(target)
+						str_message = u'Cannot overwrite file {} as overwrite is off'.format(target)
 						arcpy.AddWarning(str_message)
 				else:
 					with open(target, "w") as f1:
