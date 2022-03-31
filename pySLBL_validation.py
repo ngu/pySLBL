@@ -28,8 +28,8 @@ class ToolValidator(object):
     self.params[2].value = 'Single value'
 
     lst=['Full extent of the DEM','Clip around the polygon(s)']
-    self.params[11].filter.list=lst
-    self.params[11].value = 'Full extent of the DEM'
+    self.params[12].filter.list=lst
+    self.params[12].value = 'Full extent of the DEM'
 
     return
 
@@ -42,22 +42,22 @@ class ToolValidator(object):
   def updateMessages(self):
     """Modify the messages created by internal validation for each tool
     parameter.  This method is called after internal validation."""
-    if self.params[10].value:
-      if arcpy.Exists(self.params[10].value.value):
-        self.params[10].setErrorMessage("The feature class already exists")
+    if self.params[11].value:
+      if arcpy.Exists(self.params[11].value.value):
+        self.params[11].setErrorMessage("The feature class already exists")
       else:
-        desc = arcpy.Describe(os.path.dirname(self.params[10].value.value))
-        name = os.path.basename(self.params[10].value.value)
+        desc = arcpy.Describe(os.path.dirname(self.params[11].value.value))
+        name = os.path.basename(self.params[11].value.value)
         if desc.workspaceType == 'LocalDatabase':
-          self.params[10].clearMessage()
+          self.params[11].clearMessage()
         else:
           if name.find('.') == -1:
             if len(name) > 13:
-              self.params[10].setErrorMessage("The file name of an ESRI grid is limited to 13 characters. It is recommended to save in tiff (add '.tif' at the end of the name) or in a database, but you may also just change the name")
+              self.params[11].setErrorMessage("The file name of an ESRI grid is limited to 13 characters. It is recommended to save in tiff (add '.tif' at the end of the name) or in a database, but you may also just change the name")
             else:
-              self.params[10].setWarningMessage("It is recommended to save in tiff (add '.tif' at the end of the name) or in a database")
+              self.params[11].setWarningMessage("It is recommended to save in tiff (add '.tif' at the end of the name) or in a database")
           else:
-            self.params[10].clearMessage()
+            self.params[11].clearMessage()
 
     
     if self.params[2].value == 'Single value':
@@ -69,7 +69,7 @@ class ToolValidator(object):
       self.params[3].parameterType = 'Optional'
       self.params[3].clearMessage()
 
-    if self.params[0].value and self.params[11].value == 'Full extent of the DEM':
+    if self.params[0].value and self.params[12].value == 'Full extent of the DEM':
       DEM = self.params[0].value
       desc = arcpy.Describe(DEM)
       xmin = desc.extent.XMin
@@ -80,7 +80,7 @@ class ToolValidator(object):
       ncol = (xmax - xmin)/res
       nrow = (ymax - ymin)/res
       if nrow*ncol > 10000000:
-        self.params[11].setWarningMessage("The raster has {} rows and {} columns, which is quite large. It is recommanded to use the option 'Clip around the polygon(s)'".format(str(int(nrow)),str(int(ncol))))
+        self.params[12].setWarningMessage("The raster has {} rows and {} columns, which is quite large. It is recommanded to use the option 'Clip around the polygon(s)'".format(str(int(nrow)),str(int(ncol))))
       else:
-        self.params[11].clearMessage()
+        self.params[12].clearMessage()
     return

@@ -73,13 +73,7 @@ if __name__=="__main__":
 	else:
 		Erosion = False
 	
-	# The extent is moved by half a cell (cell center instead of border)
 	IncellSize = SlblFile.meanCellWidth
-	xmin = SlblFile.extent.XMin + (IncellSize/2.0)
-	ymin = SlblFile.extent.YMin + (IncellSize/2.0)
-	xmax = SlblFile.extent.XMax - (IncellSize/2.0)
-	ymax = SlblFile.extent.YMax - (IncellSize/2.0)
-	
 	if cellFactor != 1:
 		cellSize = IncellSize * cellFactor
 		str_message = "Inputs rasters are being aggreagated. Output cell size will be {}m".format(cellSize)
@@ -90,6 +84,12 @@ if __name__=="__main__":
 			ErosionFile = arcpy.sa.Aggregate(ErosionFile, cellFactor, "MEDIAN" ,"EXPAND", "DATA")
 	else:
 		cellSize = IncellSize
+
+	# The extent is moved by half a cell (cell center instead of border)
+	xmin = SlblFile.extent.XMin + (cellSize/2.0)
+	ymin = SlblFile.extent.YMin + (cellSize/2.0)
+	xmax = SlblFile.extent.XMax - (cellSize/2.0)
+	ymax = SlblFile.extent.YMax - (cellSize/2.0)
 	
 	# Imports the rasters in numpy for processing
 	SlblArray = arcpy.RasterToNumPyArray (SlblFile,nodata_to_value=0)

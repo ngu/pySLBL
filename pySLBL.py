@@ -45,7 +45,7 @@ import inspect
 import string, random
 
 
-def SLBL(grid_dem,grid_mask,tol,maxt,maxv,z_min):
+def SLBL(grid_dem,grid_mask,tol,maxt,maxv,z_min,planes=None):
 	# initilizes thickness and difference grids
 	s=grid_dem.shape
 	grid_thickn = np.zeros(s)
@@ -70,8 +70,11 @@ def SLBL(grid_dem,grid_mask,tol,maxt,maxv,z_min):
 	nb_iter = 0
 	volume = 0.
 
+	if np.isfinite(maxt):
+		grid_maxt = grid_dem - maxt
+
 	# The SLBL strarts here
-	while np.amax(grid_diff)>stop and np.amax(grid_thickn)<maxt and volume<maxv:
+	while np.amax(grid_diff)>stop and volume<maxv:
 		nb_iter=nb_iter+1
 		grid_thickn_prev = deepcopy(grid_thickn)
 		grid_slbl_prev = deepcopy(grid_slbl)
@@ -96,8 +99,14 @@ def SLBL(grid_dem,grid_mask,tol,maxt,maxv,z_min):
 		elif criteria == 'average':
 			mat_mean=np.mean(mat_neigh,axis=2)
 		mat_mean=mat_mean+tol
+		# limit to the lower altitude around the polygon
 		if np.isfinite(z_min):
 			mat_mean=np.maximum(mat_mean,z_min)
+		# limit to the maximum thickness
+		if np.isfinite(maxt):
+			mat_mean=np.maximum(mat_mean,grid_maxt)
+		if not planes is None:
+			mat_mean=np.maximum(mat_mean,planes)
 		
 		mat_comp[:,:,0]=mat_mean
 		mat_comp[:,:,1]=grid_slbl
@@ -181,7 +190,7 @@ def define_extent(poly_extent,dem_extent,cellSize,src_mask = False):
 			arcpy.AddError('The DEM should be at least 2 pixels larger than the polygon(s)')
 		
 		if verbose:
-			str_message = 'Processing extent: x:{}-{}, y:{}-{}, src:{}'.format(xmin,xmax,ymin,ymax,dem_extent.spatialReference.name)
+			str_message = 'Processing extent: x:{}-{}, y:{}-{}, cellsize:{}, src:{}'.format(xmin,xmax,ymin,ymax,cellSize,dem_extent.spatialReference.name)
 			arcpy.AddMessage(str_message)
 
 	return arcpy.Extent(xmin, ymin, xmax, ymax)
@@ -194,11 +203,11 @@ def raster2numpy(ws,ext,mask_file,mask_desc,not_deepen,listValue):
 	random_string =''.join(random.choice(lower_alphabet) for i in range(5))
 	grid_mask_file_temp = 'mask_temp_' + random_string
 	if verbose:
-		arcpy.AddMessage('grid_mask_file_temp initial = {}'.format(grid_mask_file_temp))
+		arcpy.AddMessage(u'grid_mask_file_temp initial = {}'.format(grid_mask_file_temp))
 	grid_mask_file_temp = arcpy.ValidateTableName(grid_mask_file_temp,ws)
 	grid_mask_file_temp = os.path.join(ws, grid_mask_file_temp + ext)
 	if verbose:
-		arcpy.AddMessage('grid_mask_file_temp validated = {}'.format(grid_mask_file_temp.encode('utf-8','replace')))
+		arcpy.AddMessage(u'grid_mask_file_temp validated = {}'.format(grid_mask_file_temp))
 	
 	# Generate a raster using the OID field as value
 	oid_fieldname = mask_desc.OIDFieldName
@@ -206,7 +215,7 @@ def raster2numpy(ws,ext,mask_file,mask_desc,not_deepen,listValue):
 		arcpy.AddMessage('Processing extent: x:[{}:{}], y:[{}:{}]'.format(arcpy.env.extent.XMin,arcpy.env.extent.XMax,arcpy.env.extent.YMin,arcpy.env.extent.YMax))
 		arcpy.AddMessage('Cellsize: {}'.format(arcpy.env.cellSize))
 		arcpy.AddMessage('Coordinate system: {}'.format(arcpy.env.outputCoordinateSystem.name))
-		arcpy.AddMessage('OID field name = {}'.format(oid_fieldname))
+		arcpy.AddMessage(u'OID field name = {}'.format(oid_fieldname))
 	arcpy.PolygonToRaster_conversion (mask_file, oid_fieldname, grid_mask_file_temp, "CELL_CENTER", "#", cellSize)
 
 	if verbose:
@@ -221,7 +230,7 @@ def raster2numpy(ws,ext,mask_file,mask_desc,not_deepen,listValue):
 	if verbose:
 		arcpy.AddMessage('grid_mask_file reclassified')
 		desc = arcpy.Describe(grid_mask_file)
-		layersource = os.path.join(str(desc.path), str(desc.name))
+		layersource = os.path.join(desc.path, desc.name)
 		arcpy.AddMessage(u'reclassified mask (intermediate) saved in: {}'.format(layersource))
 	arcpy.Delete_management(grid_mask_file_temp)
 	if verbose:
@@ -351,7 +360,6 @@ def definetolerance(grid_mask, grid_dem):
 		save_name = validatename(figspath,'plane','.png')
 		fig.savefig(os.path.join(figspath,save_name))
 		plt.close()
-
 	
 	# finds the slope and y-intercept of the profile in the xy plan
 	slope = normal[1]/normal[0]
@@ -404,22 +412,7 @@ def definetolerance(grid_mask, grid_dem):
 		str_message = 'profile: ({},{})-({},{})'.format(xa,ya,xb,yb)
 		arcpy.AddMessage(str_message)
 	
-	
-	# Projects the altitudes inside the polygon area onto the profile and
-	# measures the distance to the profile to only keep the closest ones
-	profil = np.empty((0,2), float)
-	for i in range(0,len(x)):
-		point = np.array([x[i],y[i]])
-		d, l = distToSegment(point,np.array([xa,ya]),np.array([xb,yb]))
-		if d < (1.5 * cellSize):
-			profil_add = np.array([[l,z[i]]])
-			if len(profil_add.shape)==3:
-				profil_add = np.squeeze(profil_add, axis=2)
-			profil = np.append(profil,profil_add,axis=0)
-
-	#--------------------------------------------------------------------------
-	# Work in progress --> get a better profile
-	
+	#-- Interpolate the altitudes on the profile
 	# Vectorizes the grids for all the points
 	x = grid_x.flatten()
 	y = grid_y.flatten()
@@ -441,18 +434,11 @@ def definetolerance(grid_mask, grid_dem):
 	profil_int = griddata(XY, z, xy_profile, method='cubic')
 	mask_int = griddata(XY, grid_mask.flatten(), xy_profile, method='nearest')
 	
-	#Save profiles as shapefile and figures with surfaces?
-	#Maybe the easiest is to save the profiles as points and make figures in a second step
-	# option save profile as point, line, both
-	#--------------------------------------------------------------------------
-
-
 	if savefigs:
 		# plot profile
 		import matplotlib.pyplot as plt
 		fig = plt.figure()
 		ax = fig.gca()
-		ax.plot(profil[:,0],profil[:,1],'.')
 		ax.plot(l_profile,profil_int,'b')
 		ax.plot(l_profile[mask_int],profil_int[mask_int],'r')
 		ax.axis('equal')
@@ -462,8 +448,6 @@ def definetolerance(grid_mask, grid_dem):
 		plt.close()
 
 	# Calculate the tolerance using the altitude range of the profile (dZ) and its length (dL)
-# 	dZ = np.max(profil[:,1])-np.min(profil[:,1])
-# 	dL = np.max(profil[:,0])-np.min(profil[:,0])
 	dZ = np.max(profil_int[mask_int]) - np.min(profil_int[mask_int])
 	dL = np.max(l_profile[mask_int]) - np.min(l_profile[mask_int])
 	tol_max = 4 * (1-np.sqrt(2)) * dZ * (cellSize**2/dL**2)
@@ -476,36 +460,6 @@ def definetolerance(grid_mask, grid_dem):
 	tol_min = 0	
 	
 	return tol_inter, tol_min, tol_max
-
-def distToSegment(point, seg1, seg2):
-	# Estimates the distance of a point to a segment and returns the distance to
-	# the segment (d) and the distance along the segment (l), which means where the
-	# point plots on the profile
-	
-	#squared length of the profiles segment
-	l2 = (seg1[0]-seg2[0])**2 + (seg1[1]-seg2[1])**2
-	if l2 == 0:
-		dx = point[0] - seg1[0]
-		dy = point[1] - seg1[1]
-		return np.sqrt(dx**2 + dy**2), 0
-	else:
-		dx = seg2[0] - seg1[0]
-		dy = seg2[1] - seg1[1]
-		t = ((point[0] - seg1[0]) * dx + (point[1] - seg1[1]) * dy) / l2;
-		#arcpy.AddMessage('t: {}'.format(t))
-		t = np.amax([0, np.amin([1, t])]);
-		#arcpy.AddMessage('t updated: {}'.format(t))
-
-		# distance point-profile
-		dx2 = point[0] - (seg1[0] + (t * dx))
-		dy2 = point[1] - (seg1[1] + (t * dy))
-		
-		# distance along the profile
-		dx3 = seg1[0] - (seg1[0] + (t * dx))
-		dy3 = seg1[1] - (seg1[1] + (t * dy))
-		l_seg = np.sqrt((dx3**2) + (dy3**2))
-		#arcpy.AddMessage('dist: {}'.format(np.sqrt(dx2**2 + dy2**2)))
-		return np.sqrt(dx2**2 + dy2**2), l_seg
 
 def fillsummarytable(summaryTable,out_basename,out_basename_validated,grid_thickn,grid_mask,nb_iter,tol):
 	# Output the main results to the console
@@ -617,10 +571,10 @@ def savegrids(grid_slbl,grid_thickn,ws,out_basename,ext):
 		ncols = dem_desc.width
 		nrows = dem_desc.height
 		
-		i_min = int((dem_extent.YMax - processing_extent.YMax)/cellSize)
-		i_max = int((dem_extent.YMax - processing_extent.YMin)/cellSize)
-		j_min = int((processing_extent.XMin - dem_extent.XMin)/cellSize)
-		j_max = int((processing_extent.XMax - dem_extent.XMin)/cellSize)
+		i_min = round((dem_extent.YMax - processing_extent.YMax)/cellSize)
+		i_max = round((dem_extent.YMax - processing_extent.YMin)/cellSize)
+		j_min = round((processing_extent.XMin - dem_extent.XMin)/cellSize)
+		j_max = round((processing_extent.XMax - dem_extent.XMin)/cellSize)
 
 		# Temporarly changes the processing extent to use the whole DEM extent
 		arcpy.env.extent = dem_extent
@@ -681,7 +635,7 @@ def savegrids(grid_slbl,grid_thickn,ws,out_basename,ext):
 				str_message = 'Saving elevation file...'
 				arcpy.AddMessage(str_message)
 				if verbose:
-					str_message = 'name is {} with type {}, extension is {} with type {}'.format(out_basename,type(out_basename).__name__,ext,type(out_basename).__name__)
+					str_message = u'name is {} with type {}, extension is {} with type {}'.format(out_basename,type(out_basename).__name__,ext,type(out_basename).__name__)
 					arcpy.AddMessage(str_message)
 				grid_dem_out.save(os.path.join(ws,out_basename + ext))
 			
@@ -766,19 +720,165 @@ def validatename(ws,out_basename,ext):
 		if len(ext)>0:
 			out_basename = out_basename[0:-len(ext)]
 	if verbose:
-		arcpy.AddMessage('basename = {}, with extension = {}'.format(out_basename,ext))
+		arcpy.AddMessage(u'basename = {}, with extension = {}'.format(out_basename,ext))
 	if arcpy.Exists(os.path.join(ws,out_basename+ext)):
 		i = 1
 		out_basename_temp = out_basename + '_{}'.format(i)
 		if verbose:
-			arcpy.AddMessage('attempted basename = {}, with extension = {}'.format(out_basename_temp,ext))
+			arcpy.AddMessage(u'attempted basename = {}, with extension = {}'.format(out_basename_temp,ext))
 		while arcpy.Exists(os.path.join(ws,out_basename_temp+ext)):
 			i+=1
 			out_basename_temp = out_basename + '_{}'.format(i)
 			if verbose:
-				arcpy.AddMessage('attempted basename = {}, with extension = {}'.format(out_basename_temp,ext))
+				arcpy.AddMessage(u'attempted basename = {}, with extension = {}'.format(out_basename_temp,ext))
 		out_basename = out_basename_temp
 	return out_basename
+
+def limiting_planes(point_file,grid_dem,processing_extent,cellSize):
+	
+	try:
+		arcpy.RecalculateFeatureClassExtent_management(point_file)
+	except:
+		pass
+	point_desc = arcpy.Describe(point_file)
+	try:
+		# Retrieve the selected points (works if the input is a layer)
+		point_set = point_desc.FIDSet
+	except:
+		#makes a layer first if the input is a file
+		if arcpy.GetInstallInfo()['ProductName'] == 'Desktop':
+			point_file = arcpy.mapping.Layer(point_file)
+		else:
+			#mask_file = arcpy.mp.Layer(mask_file)
+			point_file = arcpy.MakeFeatureLayer_management(point_file)
+		point_desc = arcpy.Describe(point_file)
+		# Retrieve the selected points
+		point_set = point_desc.FIDSet
+	if len(point_set) > 0:
+		point_set = point_set.split(';')
+		point_set = [int(x) for x in point_set]
+
+	if point_desc.shapeType != "Point":
+		arcpy.AddError('The limiting planes layer must be a point layer')
+	else:
+		# Check if the points and DEM are in the same SRC. Reproject the points if necessary
+		src_point = point_desc.extent.spatialReference.name
+		src_dem = arcpy.env.outputCoordinateSystem.name
+		if verbose:
+			arcpy.AddMessage('SRC point: {}, SRC dem: {}, src are equal: {}'.format(src_point,src_dem,src_point == src_dem))
+		if src_point != src_dem:
+			# Generate a random name for intermediate data (to avoid conflict if previous intermediate data weren't correctly deleted)
+			lower_alphabet = string.ascii_lowercase
+			random_string =''.join(random.choice(lower_alphabet) for i in range(5))
+			name_temp = 'point_temp_' + random_string
+			if saveInGDB:
+				point_file_temp = os.path.join(ws,name_temp)
+			else:
+				point_file_temp = os.path.join(ws,name_temp + '.shp')
+			arcpy.management.Project(point_file, point_file_temp, dem_desc.spatialReference)
+			arcpy.AddMessage('Point file reprojected in the spatial reference of the DEM')
+			point_file = point_file_temp
+			if arcpy.GetInstallInfo()['ProductName'] == 'Desktop':
+				point_file = arcpy.mapping.Layer(point_file)
+			else:
+				point_file = arcpy.MakeFeatureLayer_management(point_file)
+			point_desc = arcpy.Describe(point_file)
+			
+		oid_fieldname = point_desc.OIDFieldName
+	
+	#create empty plane matrix
+	s2 = grid_dem.shape
+	planes = np.ones(s2)
+	planes = -np.inf * planes
+
+
+	dip_fieldname = None
+	dipdir_fieldname = None
+	point_file_fields = [f.name for f in arcpy.ListFields(point_file)]
+	dip_name_allowed = ['angle','slope','dip']
+	dipdir_name_allowed = ['dir','direction','azimut','azi','dipdir','dip_dir','dip_direction','dip direction']
+	for name in point_file_fields:
+		if name.lower() in dip_name_allowed:
+			dip_fieldname = name
+	for name in point_file_fields:
+		if name.lower() in dipdir_name_allowed:
+			dipdir_fieldname = name
+	
+	if dip_fieldname is None:
+		arcpy.AddError('Dip field not found. Available fields {}. Accepted fieldnames: {}'.format(', '.join(point_file_fields),', '.join(dip_name_allowed)))
+	if dipdir_fieldname is None:
+		arcpy.AddError('Dip direction field not found. Available fields {}. Accepted fieldnames: {}'.format(', '.join(point_file_fields),', '.join(dipdir_name_allowed)))
+	
+	if verbose:
+		arcpy.AddMessage('Dip field name: {}'.format(dip_fieldname))
+		arcpy.AddMessage('Dip direction field name: {}'.format(dipdir_fieldname))
+	
+	fields = [oid_fieldname,'SHAPE@',dipdir_fieldname,dip_fieldname]
+	
+	rows = arcpy.da.SearchCursor(point_file,fields)
+	if len(point_set) > 0:
+		for row in rows:
+			feat = row[0]
+			if int(feat) in point_set:
+				plane_temp = calculate_plane(row,s2,point_desc.hasZ,processing_extent,cellSize)
+				planes[plane_temp>planes]=plane_temp[plane_temp>planes]
+			else:
+				pass
+	else: #no selected points --> takes all
+		for row in rows:
+			plane_temp = calculate_plane(row,s2,point_desc.hasZ,processing_extent,cellSize)
+			planes[plane_temp>planes]=plane_temp[plane_temp>planes]
+
+	planes[planes==-np.inf]=np.nan
+	planes = np.flipud(planes)
+	
+	arcpy.AddMessage('Planes constaint max={}, min={}, average={}'.format(np.max(planes),np.min(planes),np.mean(planes)))
+	
+	return planes
+	
+def calculate_plane(row,shape,hasZ,processing_extent,cellSize):
+	
+	for pnt in row[1]: #assuming no multipart...
+		if hasZ:
+			xy = np.array([[float(pnt.X), float(pnt.Y),float(pnt.Z)]])
+		else:
+			xy = np.array([[float(pnt.X), float(pnt.Y)]])
+	x_pt = xy[0,0]-processing_extent.XMin
+	y_pt = xy[0,1]-processing_extent.YMin
+	if hasZ:
+		z_pt = xy[0,2]
+	else:
+		grid_y, grid_x = np.mgrid[0:shape[0]*cellSize:cellSize,0:shape[1]*cellSize:cellSize]
+		grid_x = grid_x.flatten()
+		grid_y = np.flipud(grid_y)
+		grid_y = grid_y.flatten()
+		values = grid_dem.flatten()
+		grid_xy = np.dstack((grid_x, grid_y))
+		grid_xy = grid_xy.reshape(len(values),2)
+		values = values.reshape(len(values),1)
+		z_pt = griddata(grid_xy, values, (x_pt,y_pt), method='linear')
+		if verbose:
+			arcpy.AddMessage('x: {},y: {},z: {}'.format(x_pt,y_pt,z_pt))
+	
+	dip = np.radians(row[3])
+	dipdir = np.radians(row[2])
+	
+	# normal vector (see: https://ocw.snu.ac.kr/sites/default/files/NOTE/4435.pdf)
+	nx = np.sin(dip) * np.sin(dipdir)
+	ny = np.sin(dip) * np.cos(dipdir)
+	nz = np.cos(dip)
+		
+	a = -nx/nz
+	b = -ny/nz
+	c = (nx*x_pt+ny*y_pt+nz*z_pt)/nz
+	
+	#nx(x-x_pt) + ny(y-y_pt) + nz(z-z_pt) = 0
+	
+	grid_y, grid_x = np.mgrid[0:shape[0]*cellSize:cellSize,0:shape[1]*cellSize:cellSize]
+	
+	plane = a*grid_x + b*grid_y + c
+	
+	return plane
 
 #-----------------------------------------------------------------------------
 # Main script starts here
@@ -817,7 +917,7 @@ if __name__=="__main__":
 	not_deepen = arcpy.GetParameterAsText(8)
 	inverse = arcpy.GetParameterAsText(9)
 	
-	if os.path.isdir(arcpy.GetParameterAsText(10)):
+	if os.path.isdir(arcpy.GetParameterAsText(10)): #gdb return false...
 		# Multiple areas
 		merge_poly = False
 		ws = arcpy.GetParameterAsText(10)
@@ -829,12 +929,17 @@ if __name__=="__main__":
 	else:
 		# Single area
 		merge_poly = True
-		ws = os.path.dirname(arcpy.GetParameterAsText(10))
-		out_basename = os.path.basename(arcpy.GetParameterAsText(10))
-		extent_mode = arcpy.GetParameterAsText(11) # full extent of the DEM, Clip around the polygon(s)
+		point_file = arcpy.GetParameterAsText(10)
+		if len(point_file)==0:
+			plane_constraint = False
+		else:
+			plane_constraint = True
+		ws = os.path.dirname(arcpy.GetParameterAsText(11))
+		out_basename = os.path.basename(arcpy.GetParameterAsText(11))
+		extent_mode = arcpy.GetParameterAsText(12) # full extent of the DEM, Clip around the polygon(s)
 		grid_mnt_out = 'true'
-		grid_diff_out = arcpy.GetParameterAsText(12)
-		grid_hill_out = arcpy.GetParameterAsText(13)
+		grid_diff_out = arcpy.GetParameterAsText(13)
+		grid_hill_out = arcpy.GetParameterAsText(14)
 	
 	#Debbuging tools
 	verbose = True
@@ -866,7 +971,7 @@ if __name__=="__main__":
 	#grid_dem_lyr = os.path.basename(grid_dem_file)
 	#arcpy.MakeRasterLayer_management (grid_dem_file, grid_dem_lyr, "", "", "1")
 
-# Convert the polygon features to a raster mask
+	# Convert the polygon features to a raster mask
 	try:
 		arcpy.RecalculateFeatureClassExtent_management(mask_file)
 	except:
@@ -899,6 +1004,14 @@ if __name__=="__main__":
 		dem_desc = arcpy.Describe(grid_dem_path)
 		arcpy.env.outputCoordinateSystem = dem_desc.spatialReference
 		cellSize = dem_desc.meanCellWidth
+		# With mosaic datasets, the returned cellSize might be 0. --> Try to get
+		# the cellsize from the first raster of the mosaic dataset
+		if cellSize == 0:
+			try:
+				dem_desc_temp = arcpy.Describe(os.path.join(grid_dem_path,"raster.objectid=1"))
+				cellSize = dem_desc_temp.meanCellWidth
+			except:
+				arcpy.AddError("Can't get the cell size of the DEM...")
 		dem_extent = dem_desc.extent
 		
 		# Check if the mask and DEM are in the same SRC. Reproject the mask if necessary
@@ -959,16 +1072,31 @@ if __name__=="__main__":
 				processing_extent = define_extent(poly_extent,dem_extent,cellSize,src_mask = extents[0].spatialReference)
 				arcpy.env.extent = processing_extent
 				grid_mask, grid_dem, z_min = raster2numpy(ws,ext,mask_file,mask_desc,not_deepen,listValue)
+				if plane_constraint:
+					grid_planes = limiting_planes(point_file,grid_dem,processing_extent,cellSize)
 				if tol_mode == 'Auto' or tol_mode == 'Auto min/inter/max':
 					tols = definetolerance(grid_mask, grid_dem)
 				if tol_mode == 'Auto':
-					tols = tols[0]
+					tols = [tols[0]]
+				tol_nr = 0
 				for tol in tols:
-					grid_slbl, grid_thickn, nb_iter = SLBL(grid_dem,grid_mask,tol,maxt,maxv,z_min)
-					out_basename_validated = validatename(ws,out_basename,ext)
+					if plane_constraint:
+						grid_slbl, grid_thickn, nb_iter = SLBL(grid_dem,grid_mask,tol,maxt,maxv,z_min,planes=grid_planes)
+					else:
+						grid_slbl, grid_thickn, nb_iter = SLBL(grid_dem,grid_mask,tol,maxt,maxv,z_min)
+					if tol_mode == 'Auto min/inter/max':
+						if tol_nr == 0:
+							out_basename_validated = validatename(ws,out_basename + '_inter',ext)
+						if tol_nr == 1:
+							out_basename_validated = validatename(ws,out_basename + '_min',ext)
+						if tol_nr == 2:
+							out_basename_validated = validatename(ws,out_basename + '_max',ext)
+					else:
+						out_basename_validated = validatename(ws,out_basename,ext)
 					fillsummarytable(summaryTable,out_basename,out_basename_validated,grid_thickn,grid_mask,nb_iter,tol)
 					if grid_mnt_out== 'true' or grid_hill_out == 'true' or grid_diff_out == 'true':
 						savegrids(grid_slbl,grid_thickn,ws,out_basename_validated,ext)
+					tol_nr += 1
 			else:
 				#no selected polygons --> takes all
 				for row in rows:
@@ -979,16 +1107,31 @@ if __name__=="__main__":
 				processing_extent = define_extent(poly_extent,dem_extent,cellSize)
 				arcpy.env.extent = processing_extent
 				grid_mask, grid_dem, z_min = raster2numpy(ws,ext,mask_file,mask_desc,not_deepen,listValue)
+				if plane_constraint:
+					grid_planes = limiting_planes(point_file,grid_dem,processing_extent,cellSize)
 				if tol_mode == 'Auto' or tol_mode == 'Auto min/inter/max':
 					tols = definetolerance(grid_mask, grid_dem)
 				if tol_mode == 'Auto':
-					tols = tols[0]
+					tols = [tols[0]]
+				tol_nr = 0
 				for tol in tols:
-					grid_slbl, grid_thickn, nb_iter = SLBL(grid_dem,grid_mask,tol,maxt,maxv,z_min)
-					out_basename_validated = validatename(ws,out_basename,ext)
+					if plane_constraint:
+						grid_slbl, grid_thickn, nb_iter = SLBL(grid_dem,grid_mask,tol,maxt,maxv,z_min,planes=grid_planes)
+					else:
+						grid_slbl, grid_thickn, nb_iter = SLBL(grid_dem,grid_mask,tol,maxt,maxv,z_min)
+					if tol_mode == 'Auto min/inter/max':
+						if tol_nr == 0:
+							out_basename_validated = validatename(ws,out_basename + '_inter',ext)
+						if tol_nr == 1:
+							out_basename_validated = validatename(ws,out_basename + '_min',ext)
+						if tol_nr == 2:
+							out_basename_validated = validatename(ws,out_basename + '_max',ext)
+					else:
+						out_basename_validated = validatename(ws,out_basename,ext)
 					fillsummarytable(summaryTable,out_basename,out_basename_validated,grid_thickn,grid_mask,nb_iter,tol)
 					if grid_mnt_out== 'true' or grid_hill_out == 'true' or grid_diff_out == 'true':
 						savegrids(grid_slbl,grid_thickn,ws,out_basename_validated,ext)
+					tol_nr += 1
 		else:
 			if saveInGDB:
 				ext=''
@@ -1016,14 +1159,24 @@ if __name__=="__main__":
 							tols = definetolerance(grid_mask, grid_dem)
 						if tol_mode == 'Auto':
 							tols = [tols[0]]
+						tol_nr = 0
 						for tol in tols:
 							grid_slbl, grid_thickn, nb_iter = SLBL(grid_dem,grid_mask,tol,maxt,maxv,z_min)
-							out_basename_validated = validatename(ws,row[2],ext)
-							str_message = 'Original name: {}, validated name: {}'.format(row[2],out_basename_validated)
+							if tol_mode == 'Auto min/inter/max':
+								if tol_nr == 0:
+									out_basename_validated = validatename(ws,row[2] + '_inter',ext)
+								if tol_nr == 1:
+									out_basename_validated = validatename(ws,row[2] + '_min',ext)
+								if tol_nr == 2:
+									out_basename_validated = validatename(ws,row[2] + '_max',ext)
+							else:
+								out_basename_validated = validatename(ws,row[2],ext)
+							str_message = u'Original name: {}, validated name: {}'.format(row[2],out_basename_validated)
 							arcpy.AddMessage(str_message)
 							fillsummarytable(summaryTable,row[2],out_basename_validated,grid_thickn,grid_mask,nb_iter,tol)
 							if grid_mnt_out== 'true' or grid_hill_out == 'true' or grid_diff_out == 'true':
 								savegrids(grid_slbl,grid_thickn,ws,out_basename_validated,ext)
+							tol_nr += 1
 				# Reselect the polygons that where selected before running the tool:
 				clause = ''
 				for feat in Set:
@@ -1055,14 +1208,24 @@ if __name__=="__main__":
 						tols = definetolerance(grid_mask, grid_dem)
 					if tol_mode == 'Auto':
 						tols = [tols[0]]
+					tol_nr = 0
 					for tol in tols:
 						grid_slbl, grid_thickn, nb_iter = SLBL(grid_dem,grid_mask,tol,maxt,maxv,z_min)
-						out_basename_validated = validatename(ws,row[2],ext)
-						str_message = 'Original name: {}, validated name: {}'.format(row[2],out_basename_validated)
+						if tol_mode == 'Auto min/inter/max':
+							if tol_nr == 0:
+								out_basename_validated = validatename(ws,row[2] + '_inter',ext)
+							if tol_nr == 1:
+								out_basename_validated = validatename(ws,row[2] + '_min',ext)
+							if tol_nr == 2:
+								out_basename_validated = validatename(ws,row[2] + '_max',ext)
+						else:
+							out_basename_validated = validatename(ws,row[2],ext)
+						str_message = u'Original name: {}, validated name: {}'.format(row[2],out_basename_validated)
 						arcpy.AddMessage(str_message)
 						fillsummarytable(summaryTable,row[2],out_basename_validated,grid_thickn,grid_mask,nb_iter,tol)
 						if grid_mnt_out== 'true' or grid_hill_out == 'true' or grid_diff_out == 'true':
 							savegrids(grid_slbl,grid_thickn,ws,out_basename_validated,ext)
+						tol_nr += 1
 				# clears the selection (returns to the original state)
 				arcpy.SelectLayerByAttribute_management(mask_file, "CLEAR_SELECTION")
 

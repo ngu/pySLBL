@@ -5,12 +5,15 @@ This ArcGIS toolbox uses the Sloping Local Base Level method (SLBL) to create a 
 Save the toolbox ("pySLBL_v_2_0.tbx") on your computer. Open ArcMap, open the Toolbox window and right-click to add a toolbox. In ArcGIS Pro, go to the catalog pane and right-click on Toolboxes to add the toolbox
 
 ## Compatibility
-The toolbox has been developed on ArcMap 10.7.1 and tested on ArcMap 10.8 and ArcGIS Pro 2.8.0
+The toolbox has been developed on ArcMap 10.8.1 and tested on ArcGIS Pro 2.8.0
 
 ## Citing this tool
 There is no publication direclty describing this toolbox, but you may cite this Github repository: Nicolet, P. (2020): pySLBL, https://github.com/ngu/pySLBL
 
 To cite the SLBL method itself, please refer to the reference section
+
+## Reporting a bug
+If you find a bug, we appreciate if you report it to pierrick.nicolet@ngu.no. Other feedbacks or ideas are welcome as well.
 
 ## References
 
