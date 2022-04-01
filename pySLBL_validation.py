@@ -69,6 +69,33 @@ class ToolValidator(object):
       self.params[3].parameterType = 'Optional'
       self.params[3].clearMessage()
 
+    if self.params[10].value:
+      point_desc = arcpy.Describe(self.params[10].value)
+      if point_desc.shapeType != "Point":
+        self.params[10].setErrorMessage('The limiting planes layer must be a point layer')
+      else:
+        dip_fieldname = None
+        dipdir_fieldname = None
+        point_file_fields = [f.name for f in arcpy.ListFields(self.params[10].value)]
+        dip_name_allowed = ['dip_angle','dip angle','angle','slope','dip']
+        dip_name_allowed.reverse()
+        dipdir_name_allowed = ['dir','direction','azimut','azi','dipdir','dip_dir','dip_direction','dip direction']
+        dipdir_name_allowed.reverse()
+        for name in point_file_fields:
+          if name.lower() in dip_name_allowed:
+            dip_fieldname = name
+        for name in point_file_fields:
+          if name.lower() in dipdir_name_allowed:
+            dipdir_fieldname = name
+        if dip_fieldname is None:
+          self.params[10].setErrorMessage('Dip field not found. Accepted fieldnames: {}'.format(', '.join(dip_name_allowed)))
+        elif dipdir_fieldname is None:
+          self.params[10].setErrorMessage('Dip direction field not found. Accepted fieldnames: {}'.format(', '.join(dipdir_name_allowed)))
+        else:
+          self.params[10].clearMessage()
+    else:
+      self.params[10].clearMessage()
+
     if self.params[0].value and self.params[12].value == 'Full extent of the DEM':
       DEM = self.params[0].value
       desc = arcpy.Describe(DEM)

@@ -136,8 +136,13 @@ def define_extent(poly_extent,dem_extent,cellSize,src_mask = False):
 	# Define the processing area from the polygon(s) extent and the DEM
 	
 	if src_mask != False:
-		pt_min = arcpy.PointGeometry(arcpy.Point(poly_extent.XMin,poly_extent.YMin),src_mask).projectAs(dem_extent.spatialReference).centroid
-		pt_max = arcpy.PointGeometry(arcpy.Point(poly_extent.XMax,poly_extent.YMax),src_mask).projectAs(dem_extent.spatialReference).centroid
+		pt_ll = arcpy.PointGeometry(arcpy.Point(poly_extent.XMin,poly_extent.YMin),src_mask).projectAs(dem_extent.spatialReference).centroid
+		pt_ur = arcpy.PointGeometry(arcpy.Point(poly_extent.XMax,poly_extent.YMax),src_mask).projectAs(dem_extent.spatialReference).centroid
+		pt_ul = arcpy.PointGeometry(arcpy.Point(poly_extent.XMin,poly_extent.YMax),src_mask).projectAs(dem_extent.spatialReference).centroid
+		pt_lr = arcpy.PointGeometry(arcpy.Point(poly_extent.XMax,poly_extent.YMin),src_mask).projectAs(dem_extent.spatialReference).centroid
+
+		pt_min = arcpy.Point(min(pt_ll.X,pt_ul.X), min(pt_ll.Y,pt_lr.Y))
+		pt_max = arcpy.Point(max(pt_lr.X,pt_ur.X), max(pt_ul.Y,pt_ur.Y))
 
 		if verbose:
 			str_message = 'Polygon src:{}'.format(src_mask.name)
@@ -795,7 +800,7 @@ def limiting_planes(point_file,grid_dem,processing_extent,cellSize):
 	dip_fieldname = None
 	dipdir_fieldname = None
 	point_file_fields = [f.name for f in arcpy.ListFields(point_file)]
-	dip_name_allowed = ['angle','slope','dip']
+	dip_name_allowed = ['dip_angle','dip angle','angle','slope','dip']
 	dipdir_name_allowed = ['dir','direction','azimut','azi','dipdir','dip_dir','dip_direction','dip direction']
 	for name in point_file_fields:
 		if name.lower() in dip_name_allowed:
@@ -942,8 +947,8 @@ if __name__=="__main__":
 		grid_hill_out = arcpy.GetParameterAsText(14)
 	
 	#Debbuging tools
-	verbose = True
-	savefigs = True
+	verbose = False
+	savefigs = False
 	figspath = r'D:\Soft\pySLBL\Unit_tests'
 	
 	# Check the necessary extensions
@@ -1104,7 +1109,7 @@ if __name__=="__main__":
 					listValue.append([feat,1])
 				listValue.append(['NoData',0]) #must be at the end of the list
 				poly_extent = mask_desc.extent
-				processing_extent = define_extent(poly_extent,dem_extent,cellSize)
+				processing_extent = define_extent(poly_extent,dem_extent,cellSize,src_mask = poly_extent.spatialReference)
 				arcpy.env.extent = processing_extent
 				grid_mask, grid_dem, z_min = raster2numpy(ws,ext,mask_file,mask_desc,not_deepen,listValue)
 				if plane_constraint:
@@ -1141,14 +1146,14 @@ if __name__=="__main__":
 				fields = ['OID@','SHAPE@',name_field]
 				rows = arcpy.da.SearchCursor(mask_file, fields)
 				for row in rows:
-					str_message = 'Calculating SLBL for polygon {}'.format(row[2])
-					arcpy.AddMessage(str_message)
 					feat = row[0]
 					if feat in Set:
+						str_message = 'Calculating SLBL for polygon {}'.format(row[2])
+						arcpy.AddMessage(str_message)
 						listValue = [[str(feat),1]]
 						listValue.append(['NoData',0]) #must be at the end of the list
 						poly_extent = row[1].extent
-						processing_extent = define_extent(poly_extent,dem_extent,cellSize)
+						processing_extent = define_extent(poly_extent,dem_extent,cellSize,src_mask = poly_extent.spatialReference)
 						arcpy.env.extent = processing_extent
 						clause = '"' + oid_fieldname + '" = ' + str(row[0])
 						arcpy.AddMessage('Selecting feature ' +  str(row[0]))
@@ -1197,7 +1202,7 @@ if __name__=="__main__":
 					listValue = [[str(feat),1]]
 					listValue.append(['NoData',0]) #must be at the end of the list
 					poly_extent = row[1].extent
-					processing_extent = define_extent(poly_extent,dem_extent,cellSize)
+					processing_extent = define_extent(poly_extent,dem_extent,cellSize,src_mask = poly_extent.spatialReference)
 					arcpy.env.extent = processing_extent
 					clause = '"' + oid_fieldname + '" = ' + str(row[0])
 					arcpy.AddMessage('Selecting feature ' +  str(row[0]))
